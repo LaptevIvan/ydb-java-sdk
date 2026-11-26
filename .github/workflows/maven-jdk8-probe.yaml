@@ -1,0 +1,67 @@
+name: Maven version extraction on JDK 8
+
+on:
+  push:
+    branches:
+      - ci-maven-jdk8-probe
+
+permissions:
+  contents: read
+
+jobs:
+  extract-version:
+    name: Extract YDB Java SDK version
+    if: github.repository == 'LaptevIvan/ydb-java-sdk'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 8
+
+    env:
+      MAVEN_ARGS: --batch-mode -Dstyle.color=always -DYDB_DOCKER_ISOLATION=true -ntp
+
+    steps:
+      - name: Checkout YDB Java SDK
+        uses: actions/checkout@v7
+        with:
+          path: sdk
+          persist-credentials: false
+
+      - name: Checkout YDB YC Auth provider
+        uses: actions/checkout@v7
+        with:
+          repository: ydb-platform/ydb-java-yc
+          path: yc
+          persist-credentials: false
+
+      - name: Checkout YDB JDBC Driver
+        uses: actions/checkout@v7
+        with:
+          repository: ydb-platform/ydb-jdbc-driver
+          path: jdbc
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          java-version: '8'
+          distribution: temurin
+          cache: maven
+          cache-dependency-path: |
+              sdk/pom.xml
+              sdk/bom/pom.xml
+              yc/pom.xml
+              jdbc/pom.xml
+
+      - name: Extract YDB Java SDK version
+        working-directory: ./sdk
+        run: |
+          mvn -v
+          if VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout 2>&1); then
+            printf 'SDK_VERSION=%s\n' "$VERSION"
+          else
+            status=$?
+            printf 'Maven exited with status %s:\n%s\n' "$status" "$VERSION" >&2
+            if mvn -e help:evaluate -Dexpression=project.version -DforceStdout; then
+              printf '\nMaven succeeded on the diagnostic retry.\n'
+            fi
+            exit "$status"
+          fi
